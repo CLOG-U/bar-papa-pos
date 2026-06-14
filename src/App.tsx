@@ -115,6 +115,11 @@ function dollars(value: number) {
   return (value / 100).toFixed(2);
 }
 
+function productUnits(value: string | number) {
+  const parsed = Number(String(value || 0).replace(",", "."));
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0;
+}
+
 function money(value: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value / 100);
 }
@@ -413,11 +418,9 @@ function TableCard({
   const missingCents = splitPayment ? Math.max(0, table.totalCents - splitChargedCents) : Math.max(0, table.totalCents - fullCashCents);
   const overchargedCents = splitPayment ? Math.max(0, splitChargedCents - table.totalCents) : 0;
   const partWithMissingCash = splitPayment && paymentParts.some((payment) => cents(payment.amount) > 0 && cents(payment.received) < cents(payment.amount));
-  const paymentReady = missingCents === 0 && overchargedCents === 0 && !partWithMissingCash;
-  const assignedUnits = paymentParts.reduce((sum, payment) => {
-    const units = Number(String(payment.units || 0).replace(",", "."));
-    return Number.isFinite(units) ? sum + units : sum;
-  }, 0);
+  const assignedUnits = paymentParts.reduce((sum, payment) => sum + productUnits(payment.units), 0);
+  const unitsOverAssigned = assignedUnits > totalProductUnits;
+  const paymentReady = missingCents === 0 && overchargedCents === 0 && !partWithMissingCash && !unitsOverAssigned;
   const remainingUnits = Math.max(0, totalProductUnits - assignedUnits);
 
   React.useEffect(() => {
@@ -425,9 +428,8 @@ function TableCard({
     setPaymentParts([{ label: "Parte 1", units: "", amount: "", received: "" }]);
   }, [table.totalCents]);
 
-  function amountForUnits(value: string) {
-    const units = Number(String(value || 0).replace(",", "."));
-    if (!Number.isFinite(units) || units <= 0 || totalProductUnits === 0) return "";
+  function amountForUnits(units: number) {
+    if (units <= 0 || totalProductUnits === 0) return "";
     if (units >= totalProductUnits) return dollars(table.totalCents);
     return dollars(Math.round((table.totalCents / totalProductUnits) * units));
   }
@@ -441,9 +443,13 @@ function TableCard({
       parts.map((part, partIndex) => {
         if (partIndex !== index) return part;
         if (field === "units") {
-          const amount = amountForUnits(value);
+          const usedByOtherParts = parts.reduce((sum, nextPart, nextIndex) => (nextIndex === index ? sum : sum + productUnits(nextPart.units)), 0);
+          const maxForThisPart = Math.max(0, totalProductUnits - usedByOtherParts);
+          const units = Math.min(productUnits(value), maxForThisPart);
+          const nextUnits = units > 0 ? String(units) : "";
+          const amount = amountForUnits(units);
           const shouldUpdateReceived = !part.received || cents(part.received) === cents(part.amount);
-          return { ...part, units: value, amount, received: shouldUpdateReceived ? amount : part.received };
+          return { ...part, units: nextUnits, amount, received: shouldUpdateReceived ? amount : part.received };
         }
         if (field === "amount") return { ...part, units: "", amount: value };
         return { ...part, [field]: value };
@@ -625,6 +631,9 @@ function TableCard({
                   <span>
                     Productos en mesa: <strong>{totalProductUnits}</strong> · Valor por producto: <strong>{money(averageProductCents)}</strong>
                   </span>
+                  <span>
+                    Productos asignados: <strong>{assignedUnits}/{totalProductUnits}</strong>
+                  </span>
                 </div>
                 <div className="splitPaymentHeader">
                   <span>Parte</span>
@@ -645,7 +654,7 @@ function TableCard({
                       aria-label={`Productos parte ${index + 1}`}
                       type="number"
                       min="0"
-                      max={totalProductUnits}
+                      max={totalProductUnits - (assignedUnits - productUnits(payment.units))}
                       step="1"
                       placeholder="Productos"
                       value={payment.units}
