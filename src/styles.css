@@ -592,8 +592,18 @@ th {
 
 .splitPaymentRow {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) minmax(110px, 0.8fr) 40px;
+  grid-template-columns: minmax(120px, 1fr) minmax(96px, 0.7fr) minmax(96px, 0.7fr) minmax(120px, 0.8fr) 40px;
   gap: 8px;
+  align-items: center;
+}
+
+.partChange {
+  color: #1d5a3f;
+  font-size: 0.88rem;
+}
+
+.partChange.missing {
+  color: #9f3426;
 }
 
 .paymentItems {

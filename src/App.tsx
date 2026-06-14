@@ -47,6 +47,8 @@ type SalePayment = {
   id?: number;
   label: string;
   amountCents: number;
+  receivedCents?: number;
+  changeCents?: number;
 };
 
 type Sale = {
@@ -398,30 +400,36 @@ function TableCard({
   const [paymentOpen, setPaymentOpen] = React.useState(false);
   const [cash, setCash] = React.useState(dollars(table.totalCents));
   const [splitPayment, setSplitPayment] = React.useState(false);
-  const [paymentParts, setPaymentParts] = React.useState<Array<{ label: string; amount: string }>>([{ label: "Parte 1", amount: "" }]);
+  const [paymentParts, setPaymentParts] = React.useState<Array<{ label: string; amount: string; received: string }>>([
+    { label: "Parte 1", amount: "", received: "" },
+  ]);
   const fullCashCents = cents(cash);
-  const splitCashCents = paymentParts.reduce((sum, payment) => sum + cents(payment.amount), 0);
-  const receivedCents = splitPayment ? splitCashCents : fullCashCents;
-  const changeCents = Math.max(0, receivedCents - table.totalCents);
-  const missingCents = Math.max(0, table.totalCents - receivedCents);
+  const splitChargedCents = paymentParts.reduce((sum, payment) => sum + cents(payment.amount), 0);
+  const splitReceivedCents = paymentParts.reduce((sum, payment) => sum + cents(payment.received), 0);
+  const splitChangeCents = paymentParts.reduce((sum, payment) => Math.max(0, cents(payment.received) - cents(payment.amount)) + sum, 0);
+  const receivedCents = splitPayment ? splitReceivedCents : fullCashCents;
+  const changeCents = splitPayment ? splitChangeCents : Math.max(0, fullCashCents - table.totalCents);
+  const missingCents = splitPayment ? Math.max(0, table.totalCents - splitChargedCents) : Math.max(0, table.totalCents - fullCashCents);
+  const overchargedCents = splitPayment ? Math.max(0, splitChargedCents - table.totalCents) : 0;
+  const partWithMissingCash = splitPayment && paymentParts.some((payment) => cents(payment.amount) > 0 && cents(payment.received) < cents(payment.amount));
 
   React.useEffect(() => {
     setCash(dollars(table.totalCents));
-    setPaymentParts([{ label: "Parte 1", amount: "" }]);
+    setPaymentParts([{ label: "Parte 1", amount: "", received: "" }]);
   }, [table.totalCents]);
 
   function addPaymentPart(amount = "") {
-    setPaymentParts((parts) => [...parts, { label: `Parte ${parts.length + 1}`, amount }]);
+    setPaymentParts((parts) => [...parts, { label: `Parte ${parts.length + 1}`, amount, received: amount }]);
   }
 
-  function updatePaymentPart(index: number, field: "label" | "amount", value: string) {
+  function updatePaymentPart(index: number, field: "label" | "amount" | "received", value: string) {
     setPaymentParts((parts) => parts.map((part, partIndex) => (partIndex === index ? { ...part, [field]: value } : part)));
   }
 
   function removePaymentPart(index: number) {
     setPaymentParts((parts) => {
       const next = parts.filter((_, partIndex) => partIndex !== index);
-      return next.length > 0 ? next : [{ label: "Parte 1", amount: "" }];
+      return next.length > 0 ? next : [{ label: "Parte 1", amount: "", received: "" }];
     });
   }
 
@@ -549,7 +557,10 @@ function TableCard({
             <div className="paymentTotals">
               <Metric label="Total a cobrar" value={money(table.totalCents)} />
               <Metric label="Efectivo recibido" value={money(receivedCents)} />
-              <Metric label={missingCents > 0 ? "Faltante" : "Cambio"} value={money(missingCents > 0 ? missingCents : changeCents)} />
+              <Metric
+                label={missingCents > 0 ? "Faltante" : overchargedCents > 0 ? "Exceso en partes" : "Cambio"}
+                value={money(missingCents > 0 ? missingCents : overchargedCents > 0 ? overchargedCents : changeCents)}
+              />
             </div>
 
             <div className="paymentMode">
@@ -583,15 +594,29 @@ function TableCard({
                       onChange={(event) => updatePaymentPart(index, "label", event.target.value)}
                     />
                     <input
-                      aria-label={`Monto parte ${index + 1}`}
+                      aria-label={`Monto a cobrar parte ${index + 1}`}
                       autoFocus={index === 0}
                       type="number"
                       min="0"
                       step="0.01"
-                      placeholder="0.00"
+                      placeholder="Cobrar"
                       value={payment.amount}
                       onChange={(event) => updatePaymentPart(index, "amount", event.target.value)}
                     />
+                    <input
+                      aria-label={`Efectivo recibido parte ${index + 1}`}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Recibido"
+                      value={payment.received}
+                      onChange={(event) => updatePaymentPart(index, "received", event.target.value)}
+                    />
+                    <strong className={classNames("partChange", cents(payment.received) < cents(payment.amount) && "missing")}>
+                      {cents(payment.received) < cents(payment.amount)
+                        ? `Falta ${money(cents(payment.amount) - cents(payment.received))}`
+                        : `Cambio ${money(cents(payment.received) - cents(payment.amount))}`}
+                    </strong>
                     <button className="ghost square" onClick={() => removePaymentPart(index)} aria-label={`Quitar parte ${index + 1}`}>
                       x
                     </button>
@@ -622,7 +647,7 @@ function TableCard({
               </button>
               <button
                 className="primary"
-                disabled={loading || missingCents > 0}
+                disabled={loading || missingCents > 0 || overchargedCents > 0 || partWithMissingCash}
                 onClick={() =>
                   run(
                     async () => {
@@ -634,6 +659,7 @@ function TableCard({
                                 payments: paymentParts.map((payment, index) => ({
                                   label: payment.label.trim() || `Parte ${index + 1}`,
                                   amountCents: cents(payment.amount),
+                                  receivedCents: cents(payment.received),
                                 })),
                               }
                             : { cashReceivedCents: fullCashCents },
@@ -917,7 +943,12 @@ function SalesView({ sales }: { sales: Sale[] }) {
               <span>
                 Efectivo {money(sale.cashReceivedCents)} · Cambio {money(sale.changeCents)}
                 {sale.payments?.length > 1
-                  ? ` · ${sale.payments.map((payment) => `${payment.label}: ${money(payment.amountCents)}`).join(" · ")}`
+                  ? ` · ${sale.payments
+                      .map(
+                        (payment) =>
+                          `${payment.label}: cobra ${money(payment.amountCents)}, recibe ${money(payment.receivedCents || payment.amountCents)}, cambio ${money(payment.changeCents || 0)}`,
+                      )
+                      .join(" · ")}`
                   : ""}
               </span>
               <a href={`/api/sales/${sale.id}/ticket.pdf`}>Ticket PDF</a>

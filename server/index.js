@@ -134,6 +134,8 @@ function migration() {
       method TEXT NOT NULL DEFAULT 'cash',
       label TEXT NOT NULL,
       amount_cents INTEGER NOT NULL,
+      received_cents INTEGER NOT NULL DEFAULT 0,
+      change_cents INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       FOREIGN KEY (sale_id) REFERENCES sales(id)
     );
@@ -165,6 +167,15 @@ function migration() {
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
   `);
+
+  const paymentColumns = db.prepare("PRAGMA table_info(sale_payments)").all().map((column) => column.name);
+  if (!paymentColumns.includes("received_cents")) {
+    db.exec("ALTER TABLE sale_payments ADD COLUMN received_cents INTEGER NOT NULL DEFAULT 0;");
+    db.exec("UPDATE sale_payments SET received_cents = amount_cents WHERE received_cents = 0;");
+  }
+  if (!paymentColumns.includes("change_cents")) {
+    db.exec("ALTER TABLE sale_payments ADD COLUMN change_cents INTEGER NOT NULL DEFAULT 0;");
+  }
 
   const count = db.prepare("SELECT COUNT(*) AS count FROM users").get().count;
   if (count === 0) {
@@ -271,6 +282,8 @@ function saleWithItems(row) {
     method: payment.method,
     label: payment.label,
     amountCents: payment.amount_cents,
+    receivedCents: payment.received_cents || payment.amount_cents,
+    changeCents: payment.change_cents || 0,
     createdAt: payment.created_at,
   }));
   return {
@@ -547,20 +560,36 @@ app.post("/api/tables/:id/close", (req, res) => {
       method: "cash",
       label: String(payment.label || `Parte ${index + 1}`).trim(),
       amountCents: Math.round(Number(payment.amountCents || 0)),
+      receivedCents: Math.round(Number(payment.receivedCents ?? payment.amountCents ?? 0)),
     }))
-    .filter((payment) => payment.amountCents > 0);
+    .filter((payment) => payment.amountCents > 0)
+    .map((payment) => ({
+      ...payment,
+      changeCents: payment.receivedCents - payment.amountCents,
+    }));
   if (payments.length === 0) {
+    const amountCents = hydrated.totalCents;
+    const receivedCents = Math.round(Number(req.body.cashReceivedCents ?? hydrated.totalCents));
     payments.push({
       method: "cash",
       label: "Pago completo",
-      amountCents: Math.round(Number(req.body.cashReceivedCents ?? hydrated.totalCents)),
+      amountCents,
+      receivedCents,
+      changeCents: receivedCents - amountCents,
     });
   }
-  const cashReceivedCents = payments.reduce((sum, payment) => sum + payment.amountCents, 0);
-  if (cashReceivedCents < hydrated.totalCents) {
-    return res.status(400).json({ error: "El efectivo recibido no cubre el total de la mesa." });
+  const chargedCents = payments.reduce((sum, payment) => sum + payment.amountCents, 0);
+  const cashReceivedCents = payments.reduce((sum, payment) => sum + payment.receivedCents, 0);
+  const changeCents = payments.reduce((sum, payment) => sum + Math.max(0, payment.changeCents), 0);
+  if (payments.some((payment) => payment.receivedCents < payment.amountCents)) {
+    return res.status(400).json({ error: "Cada parte debe recibir efectivo suficiente para su propio cobro." });
   }
-  const changeCents = cashReceivedCents - hydrated.totalCents;
+  if (chargedCents < hydrated.totalCents) {
+    return res.status(400).json({ error: "Las partes no cubren el total de la mesa." });
+  }
+  if (chargedCents > hydrated.totalCents) {
+    return res.status(400).json({ error: "Las partes no pueden superar el total de la mesa." });
+  }
 
   db.exec("BEGIN");
   try {
@@ -570,9 +599,9 @@ app.post("/api/tables/:id/close", (req, res) => {
     `).run(tableId, table.name, hydrated.totalCents, cashReceivedCents, changeCents, user.id, now());
     payments.forEach((payment) => {
       db.prepare(`
-        INSERT INTO sale_payments (sale_id, method, label, amount_cents, created_at)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(sale.lastInsertRowid, payment.method, payment.label, payment.amountCents, now());
+        INSERT INTO sale_payments (sale_id, method, label, amount_cents, received_cents, change_cents, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(sale.lastInsertRowid, payment.method, payment.label, payment.amountCents, payment.receivedCents, Math.max(0, payment.changeCents), now());
     });
     hydrated.items.forEach((item) => {
       db.prepare(`
@@ -746,7 +775,15 @@ app.get("/api/sales/:id/ticket.pdf", (req, res) => {
     ...sale.items.map((item) => `${item.quantity} x ${item.productName} @ ${money(item.unitPriceCents)} = ${money(item.totalCents)}`),
     "",
     `Total: ${money(sale.totalCents)}`,
-    ...(sale.payments.length > 1 ? ["Pagos:", ...sale.payments.map((payment) => `${payment.label}: ${money(payment.amountCents)}`)] : []),
+    ...(sale.payments.length > 1
+      ? [
+          "Pagos:",
+          ...sale.payments.map(
+            (payment) =>
+              `${payment.label}: cobra ${money(payment.amountCents)} | recibe ${money(payment.receivedCents)} | cambio ${money(payment.changeCents)}`,
+          ),
+        ]
+      : []),
     `Efectivo: ${money(sale.cashReceivedCents)}`,
     `Cambio: ${money(sale.changeCents)}`,
   ];
