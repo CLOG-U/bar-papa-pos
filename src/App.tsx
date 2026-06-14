@@ -216,6 +216,10 @@ export function App() {
     }
   }
 
+  const lowStockProducts = products
+    .filter((product) => product.active && product.minStock > 0 && product.stock <= product.minStock)
+    .sort((a, b) => a.stock - b.stock || a.name.localeCompare(b.name));
+
   if (!user) {
     return (
       <main className="loginShell">
@@ -268,6 +272,10 @@ export function App() {
         ))}
       </nav>
 
+      {lowStockProducts.length > 0 && (
+        <LowStockAlert products={lowStockProducts} onOpenInventory={() => setActiveTab("inventory")} />
+      )}
+
       {message && <div className={classNames("notice", message.toLowerCase().includes("error") && "bad")}>{message}</div>}
 
       {activeTab === "tables" && <TablesView api={api} run={run} products={products} tables={tables} loading={loading} />}
@@ -277,6 +285,24 @@ export function App() {
       {activeTab === "audit" && <AuditView audit={audit} />}
       {activeTab === "users" && <UsersView api={api} run={run} users={users} loading={loading} />}
     </main>
+  );
+}
+
+function LowStockAlert({ products, onOpenInventory }: { products: Product[]; onOpenInventory: () => void }) {
+  const visibleProducts = products.slice(0, 3);
+  const extraCount = products.length - visibleProducts.length;
+
+  return (
+    <section className="stockAlert" role="status" aria-live="polite">
+      <div>
+        <strong>Alerta de stock minimo</strong>
+        <p>
+          {visibleProducts.map((product) => `${product.name}: ${product.stock}/${product.minStock}`).join(" · ")}
+          {extraCount > 0 ? ` · ${extraCount} mas` : ""}
+        </p>
+      </div>
+      <button onClick={onOpenInventory}>Revisar inventario</button>
+    </section>
   );
 }
 

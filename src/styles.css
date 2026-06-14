@@ -210,6 +210,42 @@ th {
   color: #8e2f20;
 }
 
+.stockAlert {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  background: #fff1c2;
+  border: 1px solid #d58b16;
+  border-left: 6px solid #b85f0f;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(80, 50, 8, 0.12);
+}
+
+.stockAlert strong {
+  display: block;
+  margin-bottom: 3px;
+  color: #6e3e08;
+}
+
+.stockAlert p {
+  margin: 0;
+  color: #5f4712;
+}
+
+.stockAlert button {
+  background: #b85f0f;
+}
+
+.stockAlert button:hover {
+  background: #914808;
+}
+
 .workspace {
   display: grid;
   gap: 16px;
@@ -595,6 +631,7 @@ th {
   }
 
   .topbar,
+  .stockAlert,
   .toolbarPanel {
     align-items: stretch;
     flex-direction: column;
