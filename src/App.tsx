@@ -303,6 +303,10 @@ function TablesView({
   const [tableName, setTableName] = React.useState("");
   const available = products.filter((product) => product.active && product.stock > 0);
   const openTotal = tables.reduce((sum, table) => sum + table.totalCents, 0);
+  const openProductUnits = tables.reduce(
+    (sum, table) => sum + table.items.reduce((itemSum, item) => itemSum + item.quantity, 0),
+    0,
+  );
 
   return (
     <section className="workspace">
@@ -329,7 +333,7 @@ function TablesView({
       <div className="summaryStrip">
         <Metric label="Mesas abiertas" value={String(tables.length)} />
         <Metric label="En consumo" value={money(openTotal)} />
-        <Metric label="Productos activos" value={String(products.filter((product) => product.active).length)} />
+        <Metric label="Productos en mesas" value={String(openProductUnits)} />
       </div>
 
       <div className="tableGrid">
@@ -449,23 +453,40 @@ function TableCard({
           Efectivo recibido
           <input type="number" min={dollars(table.totalCents)} step="0.01" value={cash} onChange={(event) => setCash(event.target.value)} />
         </label>
-        <button
-          className="primary"
-          disabled={loading || table.items.length === 0}
-          onClick={() =>
-            run(
-              async () => {
-                await api(`/api/tables/${table.id}/close`, {
-                  method: "POST",
-                  body: JSON.stringify({ cashReceivedCents: cents(cash) }),
-                });
-              },
-              "Cuenta cerrada.",
-            )
-          }
-        >
-          Cerrar cuenta
-        </button>
+        <div className="tableActions">
+          <button
+            className="danger"
+            disabled={loading}
+            onClick={() => {
+              if (!window.confirm(`Cancelar la mesa ${table.name} y devolver sus productos al inventario?`)) return;
+              run(
+                async () => {
+                  await api(`/api/tables/${table.id}/cancel`, { method: "POST" });
+                },
+                "Mesa cancelada e inventario devuelto.",
+              );
+            }}
+          >
+            Cancelar mesa
+          </button>
+          <button
+            className="primary"
+            disabled={loading || table.items.length === 0}
+            onClick={() =>
+              run(
+                async () => {
+                  await api(`/api/tables/${table.id}/close`, {
+                    method: "POST",
+                    body: JSON.stringify({ cashReceivedCents: cents(cash) }),
+                  });
+                },
+                "Cuenta cerrada.",
+              )
+            }
+          >
+            Cerrar cuenta
+          </button>
+        </div>
       </footer>
     </article>
   );

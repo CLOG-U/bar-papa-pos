@@ -8,10 +8,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
 const dataDir = path.join(rootDir, "data");
-const dbPath = path.join(dataDir, "bar-papa.sqlite");
+const dbPath = process.env.DB_PATH || path.join(dataDir, "bar-papa.sqlite");
 const PORT = process.env.PORT || 3001;
 
-fs.mkdirSync(dataDir, { recursive: true });
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
 const db = new DatabaseSync(dbPath);
 db.exec("PRAGMA foreign_keys = ON;");
@@ -528,6 +528,40 @@ app.post("/api/tables/:id/close", (req, res) => {
       WHERE s.id = ?
     `).get(sale.lastInsertRowid);
     res.status(201).json(saleWithItems(row));
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+});
+
+app.post("/api/tables/:id/cancel", (req, res) => {
+  const user = requireUser(req);
+  const tableId = Number(req.params.id);
+  const table = openTableById(tableId);
+  if (!table) return res.status(404).json({ error: "Mesa abierta no encontrada." });
+  const hydrated = hydrateTable(table);
+
+  db.exec("BEGIN");
+  try {
+    hydrated.items.forEach((item) => {
+      changeStock(item.productId, item.quantity, {
+        type: "table_cancel",
+        tableId,
+        userId: user.id,
+        note: `Cancelacion de mesa ${table.name}`,
+      });
+    });
+    db.prepare("UPDATE tables SET status = 'canceled', updated_at = ? WHERE id = ?").run(now(), tableId);
+    audit(user.id, "table.cancel", "tables", tableId, {
+      name: table.name,
+      returnedItems: hydrated.items.map((item) => ({
+        productId: item.productId,
+        productName: item.productName,
+        quantity: item.quantity,
+      })),
+    });
+    db.exec("COMMIT");
+    res.json({ ok: true, returnedItems: hydrated.items.length });
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;

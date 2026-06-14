@@ -402,6 +402,22 @@ th {
   background: #935716;
 }
 
+.danger {
+  background: #9f3426;
+}
+
+.danger:hover {
+  background: #7f281e;
+}
+
+.tableActions {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
 .formRow {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -508,6 +524,14 @@ th {
   .inlineForm,
   .closeBox {
     grid-template-columns: 1fr;
+  }
+
+  .tableActions {
+    justify-content: stretch;
+  }
+
+  .tableActions button {
+    flex: 1;
   }
 
   .tableGrid {
