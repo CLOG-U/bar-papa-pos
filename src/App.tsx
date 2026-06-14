@@ -406,9 +406,8 @@ function TableCard({
   const fullCashCents = cents(cash);
   const splitChargedCents = paymentParts.reduce((sum, payment) => sum + cents(payment.amount), 0);
   const splitReceivedCents = paymentParts.reduce((sum, payment) => sum + cents(payment.received), 0);
-  const splitChangeCents = paymentParts.reduce((sum, payment) => Math.max(0, cents(payment.received) - cents(payment.amount)) + sum, 0);
   const receivedCents = splitPayment ? splitReceivedCents : fullCashCents;
-  const changeCents = splitPayment ? splitChangeCents : Math.max(0, fullCashCents - table.totalCents);
+  const changeCents = Math.max(0, fullCashCents - table.totalCents);
   const missingCents = splitPayment ? Math.max(0, table.totalCents - splitChargedCents) : Math.max(0, table.totalCents - fullCashCents);
   const overchargedCents = splitPayment ? Math.max(0, splitChargedCents - table.totalCents) : 0;
   const partWithMissingCash = splitPayment && paymentParts.some((payment) => cents(payment.amount) > 0 && cents(payment.received) < cents(payment.amount));
@@ -598,7 +597,6 @@ function TableCard({
               <div className="splitPayments">
                 <div className="splitHint">
                   <span>Asigna el total de la mesa en partes. El cambio se calcula dentro de cada cobro.</span>
-                  <strong>Cambio total a entregar: {money(splitChangeCents)}</strong>
                 </div>
                 {paymentParts.map((payment, index) => (
                   <div className="splitPaymentRow" key={`${payment.label}-${index}`}>
