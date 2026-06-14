@@ -412,6 +412,7 @@ function TableCard({
   const missingCents = splitPayment ? Math.max(0, table.totalCents - splitChargedCents) : Math.max(0, table.totalCents - fullCashCents);
   const overchargedCents = splitPayment ? Math.max(0, splitChargedCents - table.totalCents) : 0;
   const partWithMissingCash = splitPayment && paymentParts.some((payment) => cents(payment.amount) > 0 && cents(payment.received) < cents(payment.amount));
+  const paymentReady = missingCents === 0 && overchargedCents === 0 && !partWithMissingCash;
 
   React.useEffect(() => {
     setCash(dollars(table.totalCents));
@@ -556,11 +557,20 @@ function TableCard({
 
             <div className="paymentTotals">
               <Metric label="Total a cobrar" value={money(table.totalCents)} />
-              <Metric label="Efectivo recibido" value={money(receivedCents)} />
-              <Metric
-                label={missingCents > 0 ? "Faltante" : overchargedCents > 0 ? "Exceso en partes" : "Cambio"}
-                value={money(missingCents > 0 ? missingCents : overchargedCents > 0 ? overchargedCents : changeCents)}
-              />
+              {splitPayment ? (
+                <>
+                  <Metric label="Cubierto por partes" value={money(splitChargedCents)} />
+                  <Metric
+                    label={missingCents > 0 ? "Falta por asignar" : overchargedCents > 0 ? "Exceso asignado" : "Mesa lista"}
+                    value={missingCents > 0 ? money(missingCents) : overchargedCents > 0 ? money(overchargedCents) : "OK"}
+                  />
+                </>
+              ) : (
+                <>
+                  <Metric label="Efectivo recibido" value={money(receivedCents)} />
+                  <Metric label={missingCents > 0 ? "Faltante" : "Cambio"} value={money(missingCents > 0 ? missingCents : changeCents)} />
+                </>
+              )}
             </div>
 
             <div className="paymentMode">
@@ -586,6 +596,10 @@ function TableCard({
               </label>
             ) : (
               <div className="splitPayments">
+                <div className="splitHint">
+                  <span>Asigna el total de la mesa en partes. El cambio se calcula dentro de cada cobro.</span>
+                  <strong>Cambio total a entregar: {money(splitChangeCents)}</strong>
+                </div>
                 {paymentParts.map((payment, index) => (
                   <div className="splitPaymentRow" key={`${payment.label}-${index}`}>
                     <input
@@ -647,7 +661,7 @@ function TableCard({
               </button>
               <button
                 className="primary"
-                disabled={loading || missingCents > 0 || overchargedCents > 0 || partWithMissingCash}
+                disabled={loading || !paymentReady}
                 onClick={() =>
                   run(
                     async () => {

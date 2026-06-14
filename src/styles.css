@@ -590,6 +590,21 @@ th {
   gap: 10px;
 }
 
+.splitHint {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  background: #edf1ef;
+  border-radius: 8px;
+  color: #526059;
+  padding: 10px 12px;
+}
+
+.splitHint strong {
+  color: #1d5a3f;
+  white-space: nowrap;
+}
+
 .splitPaymentRow {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) minmax(96px, 0.7fr) minmax(96px, 0.7fr) minmax(120px, 0.8fr) 40px;
@@ -654,6 +669,10 @@ th {
   .toolbarPanel .inlineForm,
   .inlineForm {
     grid-template-columns: 1fr;
+  }
+
+  .splitHint {
+    flex-direction: column;
   }
 
   .tableActions {
