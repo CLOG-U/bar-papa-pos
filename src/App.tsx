@@ -98,7 +98,7 @@ const tabs: Array<{ id: Tab; label: string }> = [
 ];
 
 function cents(value: string | number) {
-  return Math.round(Number(value || 0) * 100);
+  return Math.round(Number(String(value || 0).replace(",", ".")) * 100);
 }
 
 function dollars(value: number) {
@@ -565,12 +565,10 @@ function ProductsView({
               <input type="number" min="0" value={form.minStock} onChange={(event) => setForm({ ...form, minStock: event.target.value })} />
             </label>
           </div>
-          {!editing && (
-            <label>
-              Stock inicial
-              <input type="number" min="0" value={form.stock} onChange={(event) => setForm({ ...form, stock: event.target.value })} />
-            </label>
-          )}
+          <label>
+            {editing ? "Stock actual" : "Stock inicial"}
+            <input type="number" min="0" value={form.stock} onChange={(event) => setForm({ ...form, stock: event.target.value })} />
+          </label>
           <label className="checkLine">
             <input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} />
             Activo para venta

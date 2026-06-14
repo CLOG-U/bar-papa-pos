@@ -365,22 +365,40 @@ app.put("/api/products/:id", (req, res) => {
   const name = String(req.body.name || "").trim();
   const category = String(req.body.category || "cerveza").trim();
   const priceCents = Math.max(0, Math.round(Number(req.body.priceCents || 0)));
+  const stock = Math.max(0, Math.round(Number(req.body.stock ?? existing.stock)));
   const minStock = Math.max(0, Math.round(Number(req.body.minStock || 0)));
   const active = req.body.active ? 1 : 0;
   if (!name) return res.status(400).json({ error: "El producto necesita nombre." });
 
-  db.prepare(`
-    UPDATE products
-    SET name = ?, category = ?, price_cents = ?, min_stock = ?, active = ?, updated_at = ?
-    WHERE id = ?
-  `).run(name, category, priceCents, minStock, active, now(), id);
+  db.exec("BEGIN");
+  try {
+    db.prepare(`
+      UPDATE products
+      SET name = ?, category = ?, price_cents = ?, min_stock = ?, active = ?, updated_at = ?
+      WHERE id = ?
+    `).run(name, category, priceCents, minStock, active, now(), id);
 
-  if (priceCents !== existing.price_cents) {
-    db.prepare("UPDATE order_items SET unit_price_cents = ?, updated_at = ? WHERE product_id = ?").run(priceCents, now(), id);
-    audit(user.id, "product.price_update", "products", id, { from: existing.price_cents, to: priceCents, openTablesRecalculated: true });
+    if (priceCents !== existing.price_cents) {
+      db.prepare("UPDATE order_items SET unit_price_cents = ?, updated_at = ? WHERE product_id = ?").run(priceCents, now(), id);
+      audit(user.id, "product.price_update", "products", id, { from: existing.price_cents, to: priceCents, openTablesRecalculated: true });
+    }
+
+    if (stock !== existing.stock) {
+      changeStock(id, stock - existing.stock, {
+        type: "stock_set",
+        userId: user.id,
+        note: "Actualizacion manual desde productos",
+      });
+      audit(user.id, "product.stock_update", "products", id, { from: existing.stock, to: stock });
+    }
+
+    audit(user.id, "product.update", "products", id, { name, category, priceCents, stock, minStock, active });
+    db.exec("COMMIT");
+    res.json({ ok: true });
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
   }
-  audit(user.id, "product.update", "products", id, { name, category, priceCents, minStock, active });
-  res.json({ ok: true });
 });
 
 app.get("/api/tables", (req, res) => {
