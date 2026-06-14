@@ -361,7 +361,11 @@ function TableCard({
 }) {
   const [productId, setProductId] = React.useState("");
   const [quantity, setQuantity] = React.useState("1");
+  const [paymentOpen, setPaymentOpen] = React.useState(false);
   const [cash, setCash] = React.useState(dollars(table.totalCents));
+  const cashCents = cents(cash);
+  const changeCents = Math.max(0, cashCents - table.totalCents);
+  const missingCents = Math.max(0, table.totalCents - cashCents);
 
   React.useEffect(() => {
     setCash(dollars(table.totalCents));
@@ -449,10 +453,6 @@ function TableCard({
       </div>
 
       <footer className="closeBox">
-        <label>
-          Efectivo recibido
-          <input type="number" min={dollars(table.totalCents)} step="0.01" value={cash} onChange={(event) => setCash(event.target.value)} />
-        </label>
         <div className="tableActions">
           <button
             className="danger"
@@ -472,22 +472,78 @@ function TableCard({
           <button
             className="primary"
             disabled={loading || table.items.length === 0}
-            onClick={() =>
-              run(
-                async () => {
-                  await api(`/api/tables/${table.id}/close`, {
-                    method: "POST",
-                    body: JSON.stringify({ cashReceivedCents: cents(cash) }),
-                  });
-                },
-                "Cuenta cerrada.",
-              )
-            }
+            onClick={() => setPaymentOpen(true)}
           >
             Cerrar cuenta
           </button>
         </div>
       </footer>
+
+      {paymentOpen && (
+        <div className="modalBackdrop" role="dialog" aria-modal="true" aria-labelledby={`payment-title-${table.id}`}>
+          <section className="paymentModal">
+            <header>
+              <div>
+                <p className="eyebrow">Cobro en efectivo</p>
+                <h2 id={`payment-title-${table.id}`}>{table.name}</h2>
+              </div>
+              <button className="ghost square" onClick={() => setPaymentOpen(false)} aria-label="Cerrar cobro">
+                x
+              </button>
+            </header>
+
+            <div className="paymentTotals">
+              <Metric label="Total a cobrar" value={money(table.totalCents)} />
+              <Metric label="Efectivo recibido" value={money(cashCents)} />
+              <Metric label={missingCents > 0 ? "Faltante" : "Cambio"} value={money(missingCents > 0 ? missingCents : changeCents)} />
+            </div>
+
+            <label>
+              Efectivo recibido
+              <input
+                autoFocus
+                type="number"
+                min="0"
+                step="0.01"
+                value={cash}
+                onChange={(event) => setCash(event.target.value)}
+              />
+            </label>
+
+            <div className="paymentItems">
+              {table.items.map((item) => (
+                <span key={item.id}>
+                  {item.quantity}x {item.productName} · {money(item.totalCents)}
+                </span>
+              ))}
+            </div>
+
+            <footer>
+              <button className="ghost" onClick={() => setPaymentOpen(false)}>
+                Volver
+              </button>
+              <button
+                className="primary"
+                disabled={loading || missingCents > 0}
+                onClick={() =>
+                  run(
+                    async () => {
+                      await api(`/api/tables/${table.id}/close`, {
+                        method: "POST",
+                        body: JSON.stringify({ cashReceivedCents: cashCents }),
+                      });
+                      setPaymentOpen(false);
+                    },
+                    "Cuenta cerrada.",
+                  )
+                }
+              >
+                Confirmar cobro
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
     </article>
   );
 }

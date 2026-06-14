@@ -522,7 +522,10 @@ app.post("/api/tables/:id/close", (req, res) => {
   if (!table) return res.status(404).json({ error: "Mesa abierta no encontrada." });
   const hydrated = hydrateTable(table);
   if (hydrated.items.length === 0) return res.status(400).json({ error: "No puedes cerrar una mesa vacia." });
-  const cashReceivedCents = Math.max(hydrated.totalCents, Math.round(Number(req.body.cashReceivedCents || hydrated.totalCents)));
+  const cashReceivedCents = Math.round(Number(req.body.cashReceivedCents ?? hydrated.totalCents));
+  if (cashReceivedCents < hydrated.totalCents) {
+    return res.status(400).json({ error: "El efectivo recibido no cubre el total de la mesa." });
+  }
   const changeCents = cashReceivedCents - hydrated.totalCents;
 
   db.exec("BEGIN");

@@ -388,10 +388,8 @@ th {
 }
 
 .closeBox {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
-  align-items: end;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .primary {
@@ -493,6 +491,62 @@ th {
   padding: 6px 8px;
 }
 
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(23, 32, 28, 0.42);
+  padding: 18px;
+}
+
+.paymentModal {
+  width: min(640px, 100%);
+  max-height: min(760px, calc(100vh - 36px));
+  overflow: auto;
+  display: grid;
+  gap: 16px;
+  background: #fff;
+  border: 1px solid #dce2df;
+  border-radius: 8px;
+  box-shadow: 0 24px 70px rgba(23, 32, 28, 0.28);
+  padding: 18px;
+}
+
+.paymentModal header,
+.paymentModal footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.paymentModal h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.paymentTotals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.paymentItems {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.paymentItems span {
+  background: #edf1ef;
+  border-radius: 8px;
+  color: #526059;
+  font-size: 0.86rem;
+  padding: 7px 9px;
+}
+
 .emptyState {
   min-height: 140px;
   display: grid;
@@ -520,9 +574,9 @@ th {
   }
 
   .summaryStrip,
+  .paymentTotals,
   .toolbarPanel .inlineForm,
-  .inlineForm,
-  .closeBox {
+  .inlineForm {
     grid-template-columns: 1fr;
   }
 
