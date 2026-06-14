@@ -43,6 +43,12 @@ type SaleItem = {
   totalCents: number;
 };
 
+type SalePayment = {
+  id?: number;
+  label: string;
+  amountCents: number;
+};
+
 type Sale = {
   id: number;
   tableName: string;
@@ -52,6 +58,7 @@ type Sale = {
   closedByName?: string;
   closedAt: string;
   items: SaleItem[];
+  payments: SalePayment[];
 };
 
 type InventoryMovement = {
@@ -98,7 +105,8 @@ const tabs: Array<{ id: Tab; label: string }> = [
 ];
 
 function cents(value: string | number) {
-  return Math.round(Number(String(value || 0).replace(",", ".")) * 100);
+  const parsed = Number(String(value || 0).replace(",", "."));
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
 }
 
 function dollars(value: number) {
@@ -363,13 +371,33 @@ function TableCard({
   const [quantity, setQuantity] = React.useState("1");
   const [paymentOpen, setPaymentOpen] = React.useState(false);
   const [cash, setCash] = React.useState(dollars(table.totalCents));
-  const cashCents = cents(cash);
-  const changeCents = Math.max(0, cashCents - table.totalCents);
-  const missingCents = Math.max(0, table.totalCents - cashCents);
+  const [splitPayment, setSplitPayment] = React.useState(false);
+  const [paymentParts, setPaymentParts] = React.useState<Array<{ label: string; amount: string }>>([{ label: "Parte 1", amount: "" }]);
+  const fullCashCents = cents(cash);
+  const splitCashCents = paymentParts.reduce((sum, payment) => sum + cents(payment.amount), 0);
+  const receivedCents = splitPayment ? splitCashCents : fullCashCents;
+  const changeCents = Math.max(0, receivedCents - table.totalCents);
+  const missingCents = Math.max(0, table.totalCents - receivedCents);
 
   React.useEffect(() => {
     setCash(dollars(table.totalCents));
+    setPaymentParts([{ label: "Parte 1", amount: "" }]);
   }, [table.totalCents]);
+
+  function addPaymentPart(amount = "") {
+    setPaymentParts((parts) => [...parts, { label: `Parte ${parts.length + 1}`, amount }]);
+  }
+
+  function updatePaymentPart(index: number, field: "label" | "amount", value: string) {
+    setPaymentParts((parts) => parts.map((part, partIndex) => (partIndex === index ? { ...part, [field]: value } : part)));
+  }
+
+  function removePaymentPart(index: number) {
+    setPaymentParts((parts) => {
+      const next = parts.filter((_, partIndex) => partIndex !== index);
+      return next.length > 0 ? next : [{ label: "Parte 1", amount: "" }];
+    });
+  }
 
   return (
     <article className="tableCard">
@@ -494,21 +522,65 @@ function TableCard({
 
             <div className="paymentTotals">
               <Metric label="Total a cobrar" value={money(table.totalCents)} />
-              <Metric label="Efectivo recibido" value={money(cashCents)} />
+              <Metric label="Efectivo recibido" value={money(receivedCents)} />
               <Metric label={missingCents > 0 ? "Faltante" : "Cambio"} value={money(missingCents > 0 ? missingCents : changeCents)} />
             </div>
 
-            <label>
-              Efectivo recibido
-              <input
-                autoFocus
-                type="number"
-                min="0"
-                step="0.01"
-                value={cash}
-                onChange={(event) => setCash(event.target.value)}
-              />
-            </label>
+            <div className="paymentMode">
+              <button className={!splitPayment ? "active" : undefined} onClick={() => setSplitPayment(false)}>
+                Pago completo
+              </button>
+              <button className={splitPayment ? "active" : undefined} onClick={() => setSplitPayment(true)}>
+                Por partes
+              </button>
+            </div>
+
+            {!splitPayment ? (
+              <label>
+                Efectivo recibido
+                <input
+                  autoFocus
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={cash}
+                  onChange={(event) => setCash(event.target.value)}
+                />
+              </label>
+            ) : (
+              <div className="splitPayments">
+                {paymentParts.map((payment, index) => (
+                  <div className="splitPaymentRow" key={`${payment.label}-${index}`}>
+                    <input
+                      aria-label={`Nombre parte ${index + 1}`}
+                      value={payment.label}
+                      onChange={(event) => updatePaymentPart(index, "label", event.target.value)}
+                    />
+                    <input
+                      aria-label={`Monto parte ${index + 1}`}
+                      autoFocus={index === 0}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={payment.amount}
+                      onChange={(event) => updatePaymentPart(index, "amount", event.target.value)}
+                    />
+                    <button className="ghost square" onClick={() => removePaymentPart(index)} aria-label={`Quitar parte ${index + 1}`}>
+                      x
+                    </button>
+                  </div>
+                ))}
+                <div className="buttonRow">
+                  <button className="ghost" onClick={() => addPaymentPart()}>
+                    Agregar parte
+                  </button>
+                  <button className="ghost" onClick={() => addPaymentPart(dollars(missingCents))} disabled={missingCents === 0}>
+                    Agregar resto
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="paymentItems">
               {table.items.map((item) => (
@@ -530,7 +602,16 @@ function TableCard({
                     async () => {
                       await api(`/api/tables/${table.id}/close`, {
                         method: "POST",
-                        body: JSON.stringify({ cashReceivedCents: cashCents }),
+                        body: JSON.stringify(
+                          splitPayment
+                            ? {
+                                payments: paymentParts.map((payment, index) => ({
+                                  label: payment.label.trim() || `Parte ${index + 1}`,
+                                  amountCents: cents(payment.amount),
+                                })),
+                              }
+                            : { cashReceivedCents: fullCashCents },
+                        ),
                       });
                       setPaymentOpen(false);
                     },
@@ -807,7 +888,12 @@ function SalesView({ sales }: { sales: Sale[] }) {
               ))}
             </div>
             <footer>
-              <span>Efectivo {money(sale.cashReceivedCents)} · Cambio {money(sale.changeCents)}</span>
+              <span>
+                Efectivo {money(sale.cashReceivedCents)} · Cambio {money(sale.changeCents)}
+                {sale.payments?.length > 1
+                  ? ` · ${sale.payments.map((payment) => `${payment.label}: ${money(payment.amountCents)}`).join(" · ")}`
+                  : ""}
+              </span>
               <a href={`/api/sales/${sale.id}/ticket.pdf`}>Ticket PDF</a>
             </footer>
           </article>

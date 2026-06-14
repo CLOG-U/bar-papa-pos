@@ -533,6 +533,33 @@ th {
   gap: 10px;
 }
 
+.paymentMode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.paymentMode button {
+  background: #e2e8e4;
+  color: #17201c;
+}
+
+.paymentMode button.active {
+  background: #1d5a3f;
+  color: #fff;
+}
+
+.splitPayments {
+  display: grid;
+  gap: 10px;
+}
+
+.splitPaymentRow {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(110px, 0.8fr) 40px;
+  gap: 8px;
+}
+
 .paymentItems {
   display: flex;
   flex-wrap: wrap;
@@ -575,6 +602,8 @@ th {
 
   .summaryStrip,
   .paymentTotals,
+  .paymentMode,
+  .splitPaymentRow,
   .toolbarPanel .inlineForm,
   .inlineForm {
     grid-template-columns: 1fr;

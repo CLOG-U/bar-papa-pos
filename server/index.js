@@ -128,6 +128,16 @@ function migration() {
       FOREIGN KEY (sale_id) REFERENCES sales(id)
     );
 
+    CREATE TABLE IF NOT EXISTS sale_payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sale_id INTEGER NOT NULL,
+      method TEXT NOT NULL DEFAULT 'cash',
+      label TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (sale_id) REFERENCES sales(id)
+    );
+
     CREATE TABLE IF NOT EXISTS inventory_movements (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       product_id INTEGER NOT NULL,
@@ -255,6 +265,14 @@ function saleWithItems(row) {
     unitPriceCents: item.unit_price_cents,
     totalCents: item.total_cents,
   }));
+  const payments = db.prepare("SELECT * FROM sale_payments WHERE sale_id = ? ORDER BY id").all(row.id).map((payment) => ({
+    id: payment.id,
+    saleId: payment.sale_id,
+    method: payment.method,
+    label: payment.label,
+    amountCents: payment.amount_cents,
+    createdAt: payment.created_at,
+  }));
   return {
     id: row.id,
     tableId: row.table_id,
@@ -267,6 +285,7 @@ function saleWithItems(row) {
     closedByName: row.closed_by_name,
     closedAt: row.closed_at,
     items,
+    payments,
   };
 }
 
@@ -522,7 +541,22 @@ app.post("/api/tables/:id/close", (req, res) => {
   if (!table) return res.status(404).json({ error: "Mesa abierta no encontrada." });
   const hydrated = hydrateTable(table);
   if (hydrated.items.length === 0) return res.status(400).json({ error: "No puedes cerrar una mesa vacia." });
-  const cashReceivedCents = Math.round(Number(req.body.cashReceivedCents ?? hydrated.totalCents));
+  const rawPayments = Array.isArray(req.body.payments) ? req.body.payments : [];
+  const payments = rawPayments
+    .map((payment, index) => ({
+      method: "cash",
+      label: String(payment.label || `Parte ${index + 1}`).trim(),
+      amountCents: Math.round(Number(payment.amountCents || 0)),
+    }))
+    .filter((payment) => payment.amountCents > 0);
+  if (payments.length === 0) {
+    payments.push({
+      method: "cash",
+      label: "Pago completo",
+      amountCents: Math.round(Number(req.body.cashReceivedCents ?? hydrated.totalCents)),
+    });
+  }
+  const cashReceivedCents = payments.reduce((sum, payment) => sum + payment.amountCents, 0);
   if (cashReceivedCents < hydrated.totalCents) {
     return res.status(400).json({ error: "El efectivo recibido no cubre el total de la mesa." });
   }
@@ -534,6 +568,12 @@ app.post("/api/tables/:id/close", (req, res) => {
       INSERT INTO sales (table_id, table_name, total_cents, payment_method, cash_received_cents, change_cents, closed_by, closed_at)
       VALUES (?, ?, ?, 'cash', ?, ?, ?, ?)
     `).run(tableId, table.name, hydrated.totalCents, cashReceivedCents, changeCents, user.id, now());
+    payments.forEach((payment) => {
+      db.prepare(`
+        INSERT INTO sale_payments (sale_id, method, label, amount_cents, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(sale.lastInsertRowid, payment.method, payment.label, payment.amountCents, now());
+    });
     hydrated.items.forEach((item) => {
       db.prepare(`
         INSERT INTO sale_items (sale_id, product_id, product_name, quantity, unit_price_cents, total_cents)
@@ -541,7 +581,13 @@ app.post("/api/tables/:id/close", (req, res) => {
       `).run(sale.lastInsertRowid, item.productId, item.productName, item.quantity, item.unitPriceCents, item.totalCents);
     });
     db.prepare("UPDATE tables SET status = 'closed', updated_at = ? WHERE id = ?").run(now(), tableId);
-    audit(user.id, "sale.close", "sales", sale.lastInsertRowid, { tableId, totalCents: hydrated.totalCents, paymentMethod: "cash" });
+    audit(user.id, "sale.close", "sales", sale.lastInsertRowid, {
+      tableId,
+      totalCents: hydrated.totalCents,
+      paymentMethod: "cash",
+      payments,
+      changeCents,
+    });
     db.exec("COMMIT");
     const row = db.prepare(`
       SELECT s.*, u.name AS closed_by_name
@@ -700,6 +746,7 @@ app.get("/api/sales/:id/ticket.pdf", (req, res) => {
     ...sale.items.map((item) => `${item.quantity} x ${item.productName} @ ${money(item.unitPriceCents)} = ${money(item.totalCents)}`),
     "",
     `Total: ${money(sale.totalCents)}`,
+    ...(sale.payments.length > 1 ? ["Pagos:", ...sale.payments.map((payment) => `${payment.label}: ${money(payment.amountCents)}`)] : []),
     `Efectivo: ${money(sale.cashReceivedCents)}`,
     `Cambio: ${money(sale.changeCents)}`,
   ];
