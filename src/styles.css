@@ -538,7 +538,7 @@ th {
 }
 
 .paymentModal {
-  width: min(640px, 100%);
+  width: min(780px, 100%);
   max-height: min(760px, calc(100vh - 36px));
   overflow: auto;
   display: grid;
@@ -594,14 +594,28 @@ th {
   background: #edf1ef;
   border-radius: 8px;
   color: #526059;
+  display: grid;
+  gap: 4px;
   padding: 10px 12px;
 }
 
+.splitHint strong {
+  color: #17201c;
+}
+
+.splitPaymentHeader,
 .splitPaymentRow {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) minmax(96px, 0.7fr) minmax(96px, 0.7fr) minmax(120px, 0.8fr) 40px;
+  grid-template-columns: minmax(120px, 1fr) 104px 104px 104px minmax(112px, 0.8fr) 40px;
   gap: 8px;
   align-items: center;
+}
+
+.splitPaymentHeader {
+  color: #66736d;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .partChange {
@@ -657,6 +671,7 @@ th {
   .summaryStrip,
   .paymentTotals,
   .paymentMode,
+  .splitPaymentHeader,
   .splitPaymentRow,
   .toolbarPanel .inlineForm,
   .inlineForm {

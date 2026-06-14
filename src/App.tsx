@@ -400,9 +400,11 @@ function TableCard({
   const [paymentOpen, setPaymentOpen] = React.useState(false);
   const [cash, setCash] = React.useState(dollars(table.totalCents));
   const [splitPayment, setSplitPayment] = React.useState(false);
-  const [paymentParts, setPaymentParts] = React.useState<Array<{ label: string; amount: string; received: string }>>([
-    { label: "Parte 1", amount: "", received: "" },
+  const [paymentParts, setPaymentParts] = React.useState<Array<{ label: string; units: string; amount: string; received: string }>>([
+    { label: "Parte 1", units: "", amount: "", received: "" },
   ]);
+  const totalProductUnits = table.items.reduce((sum, item) => sum + item.quantity, 0);
+  const averageProductCents = totalProductUnits > 0 ? Math.round(table.totalCents / totalProductUnits) : 0;
   const fullCashCents = cents(cash);
   const splitChargedCents = paymentParts.reduce((sum, payment) => sum + cents(payment.amount), 0);
   const splitReceivedCents = paymentParts.reduce((sum, payment) => sum + cents(payment.received), 0);
@@ -412,24 +414,47 @@ function TableCard({
   const overchargedCents = splitPayment ? Math.max(0, splitChargedCents - table.totalCents) : 0;
   const partWithMissingCash = splitPayment && paymentParts.some((payment) => cents(payment.amount) > 0 && cents(payment.received) < cents(payment.amount));
   const paymentReady = missingCents === 0 && overchargedCents === 0 && !partWithMissingCash;
+  const assignedUnits = paymentParts.reduce((sum, payment) => {
+    const units = Number(String(payment.units || 0).replace(",", "."));
+    return Number.isFinite(units) ? sum + units : sum;
+  }, 0);
+  const remainingUnits = Math.max(0, totalProductUnits - assignedUnits);
 
   React.useEffect(() => {
     setCash(dollars(table.totalCents));
-    setPaymentParts([{ label: "Parte 1", amount: "", received: "" }]);
+    setPaymentParts([{ label: "Parte 1", units: "", amount: "", received: "" }]);
   }, [table.totalCents]);
 
-  function addPaymentPart(amount = "") {
-    setPaymentParts((parts) => [...parts, { label: `Parte ${parts.length + 1}`, amount, received: amount }]);
+  function amountForUnits(value: string) {
+    const units = Number(String(value || 0).replace(",", "."));
+    if (!Number.isFinite(units) || units <= 0 || totalProductUnits === 0) return "";
+    if (units >= totalProductUnits) return dollars(table.totalCents);
+    return dollars(Math.round((table.totalCents / totalProductUnits) * units));
   }
 
-  function updatePaymentPart(index: number, field: "label" | "amount" | "received", value: string) {
-    setPaymentParts((parts) => parts.map((part, partIndex) => (partIndex === index ? { ...part, [field]: value } : part)));
+  function addPaymentPart(amount = "", units = "") {
+    setPaymentParts((parts) => [...parts, { label: `Parte ${parts.length + 1}`, units, amount, received: amount }]);
+  }
+
+  function updatePaymentPart(index: number, field: "label" | "units" | "amount" | "received", value: string) {
+    setPaymentParts((parts) =>
+      parts.map((part, partIndex) => {
+        if (partIndex !== index) return part;
+        if (field === "units") {
+          const amount = amountForUnits(value);
+          const shouldUpdateReceived = !part.received || cents(part.received) === cents(part.amount);
+          return { ...part, units: value, amount, received: shouldUpdateReceived ? amount : part.received };
+        }
+        if (field === "amount") return { ...part, units: "", amount: value };
+        return { ...part, [field]: value };
+      }),
+    );
   }
 
   function removePaymentPart(index: number) {
     setPaymentParts((parts) => {
       const next = parts.filter((_, partIndex) => partIndex !== index);
-      return next.length > 0 ? next : [{ label: "Parte 1", amount: "", received: "" }];
+      return next.length > 0 ? next : [{ label: "Parte 1", units: "", amount: "", received: "" }];
     });
   }
 
@@ -597,6 +622,17 @@ function TableCard({
               <div className="splitPayments">
                 <div className="splitHint">
                   <span>Asigna el total de la mesa en partes. El cambio se calcula dentro de cada cobro.</span>
+                  <span>
+                    Productos en mesa: <strong>{totalProductUnits}</strong> · Valor por producto: <strong>{money(averageProductCents)}</strong>
+                  </span>
+                </div>
+                <div className="splitPaymentHeader">
+                  <span>Parte</span>
+                  <span>Productos</span>
+                  <span>Cobrar</span>
+                  <span>Recibido</span>
+                  <span>Cambio</span>
+                  <span></span>
                 </div>
                 {paymentParts.map((payment, index) => (
                   <div className="splitPaymentRow" key={`${payment.label}-${index}`}>
@@ -604,6 +640,16 @@ function TableCard({
                       aria-label={`Nombre parte ${index + 1}`}
                       value={payment.label}
                       onChange={(event) => updatePaymentPart(index, "label", event.target.value)}
+                    />
+                    <input
+                      aria-label={`Productos parte ${index + 1}`}
+                      type="number"
+                      min="0"
+                      max={totalProductUnits}
+                      step="1"
+                      placeholder="Productos"
+                      value={payment.units}
+                      onChange={(event) => updatePaymentPart(index, "units", event.target.value)}
                     />
                     <input
                       aria-label={`Monto a cobrar parte ${index + 1}`}
@@ -638,7 +684,11 @@ function TableCard({
                   <button className="ghost" onClick={() => addPaymentPart()}>
                     Agregar parte
                   </button>
-                  <button className="ghost" onClick={() => addPaymentPart(dollars(missingCents))} disabled={missingCents === 0}>
+                  <button
+                    className="ghost"
+                    onClick={() => addPaymentPart(dollars(missingCents), remainingUnits > 0 ? String(remainingUnits) : "")}
+                    disabled={missingCents === 0}
+                  >
                     Agregar resto
                   </button>
                 </div>
